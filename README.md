@@ -17,6 +17,14 @@ Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `sim
 
 ## Installation
 
+**Homebrew:**
+
+```bash
+brew install artemnovichkov/tap/hinge
+```
+
+**From source:**
+
 ```bash
 git clone https://github.com/artemnovichkov/hinge.git
 ln -s "$PWD/hinge/bin/hinge" /usr/local/bin/hinge
@@ -48,17 +56,24 @@ Options:
 
 [`skills/hinge`](skills/hinge) is a self-contained [Agent Skill](https://agentskills.io) that bundles the CLI. It lets an agent fold the simulator while verifying your app.
 
-**Claude Code:**
+**[skills.sh](https://skills.sh)** (Claude Code, Codex, Cursor, and other agents):
 
 ```bash
-cp -R hinge/skills/hinge ~/.claude/skills/        # all projects
-cp -R hinge/skills/hinge .claude/skills/          # or a single project
+npx skills add artemnovichkov/hinge
 ```
 
-**Codex:**
+**Claude Code plugin:**
+
+```
+/plugin marketplace add artemnovichkov/hinge
+/plugin install hinge@hinge
+```
+
+**Manually:**
 
 ```bash
-cp -R hinge/skills/hinge ~/.codex/skills/
+cp -R hinge/skills/hinge ~/.claude/skills/   # Claude Code
+cp -R hinge/skills/hinge ~/.codex/skills/    # Codex
 ```
 
 Then ask the agent something like *"fold the simulator to 90° and take a screenshot"*.

@@ -1,0 +1,16 @@
+{
+  "name": "hinge",
+  "description": "Control the hinge angle of a foldable iPhone Simulator from Claude Code",
+  "owner": {
+    "name": "Artem Novichkov",
+    "url": "https://github.com/artemnovichkov"
+  },
+  "plugins": [
+    {
+      "name": "hinge",
+      "source": "./",
+      "description": "Control the hinge angle of a foldable iPhone Simulator (iPhone Duo)",
+      "version": "0.1.0"
+    }
+  ]
+}

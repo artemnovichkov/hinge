@@ -1,0 +1,13 @@
+{
+  "name": "hinge",
+  "version": "0.1.0",
+  "description": "Control the hinge angle of a foldable iPhone Simulator (iPhone Duo)",
+  "author": {
+    "name": "Artem Novichkov",
+    "url": "https://github.com/artemnovichkov"
+  },
+  "homepage": "https://github.com/artemnovichkov/hinge",
+  "repository": "https://github.com/artemnovichkov/hinge",
+  "license": "MIT",
+  "keywords": ["ios", "simulator", "foldable", "iphone-duo", "xcode"]
+}
