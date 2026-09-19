@@ -9,5 +9,11 @@
   "homepage": "https://github.com/artemnovichkov/hinge",
   "repository": "https://github.com/artemnovichkov/hinge",
   "license": "MIT",
-  "keywords": ["ios", "simulator", "foldable", "iphone-duo", "xcode"]
+  "keywords": [
+    "ios",
+    "simulator",
+    "foldable",
+    "iphone-duo",
+    "xcode"
+  ]
 }

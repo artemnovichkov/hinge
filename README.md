@@ -96,6 +96,16 @@ The hinge slider in Device Hub sends a vendor-defined HID event to the simulator
 - The protocol is private and undocumented. It was verified with Xcode 27.1 and the iOS 27.1 runtime and may break with future releases.
 - The Device Hub slider doesn't move when the angle changes from `hinge`.
 
+## Releasing
+
+Run the **Release** workflow with a version number:
+
+```bash
+gh workflow run release.yml -f version=0.2.0
+```
+
+It bumps the version in the script and plugin manifests, tags the commit, creates a GitHub release, and updates the Homebrew formula in [artemnovichkov/homebrew-tap](https://github.com/artemnovichkov/homebrew-tap).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
