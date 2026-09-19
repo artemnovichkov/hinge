@@ -2,7 +2,7 @@
 
 Control the hinge angle of a foldable iPhone Simulator (iPhone Duo) from the command line, from scripts, or from AI coding agents like Claude Code and Codex.
 
-<!-- DEMO: replace this line with the uploaded video URL -->
+https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
 
 ```bash
 hinge 120            # set the angle: 0 = closed, 180 = flat
