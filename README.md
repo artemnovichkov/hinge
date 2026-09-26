@@ -1,5 +1,12 @@
 # hinge
 
+<p>
+  <a href="https://github.com/artemnovichkov/hinge/releases/latest"><img src="https://img.shields.io/github/v/release/artemnovichkov/hinge" alt="Latest release"></a>
+  <a href="https://github.com/artemnovichkov/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-artemnovichkov%2Ftap-orange.svg" alt="Homebrew"></a>
+  <img src="https://img.shields.io/badge/macOS-Xcode%2027.1+-blue.svg" alt="Xcode 27.1+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="MIT License"></a>
+</p>
+
 Control the hinge angle of a foldable iPhone Simulator (iPhone Duo) from the command line, from scripts, or from AI coding agents like Claude Code and Codex.
 
 https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
@@ -97,16 +104,6 @@ The hinge slider in Device Hub sends a vendor-defined HID event to the simulator
 - Simulator only. Physical devices are not supported.
 - The protocol is private and undocumented. It was verified with Xcode 27.1 and the iOS 27.1 runtime and may break with future releases.
 - The Device Hub slider doesn't move when the angle changes from `hinge`.
-
-## Releasing
-
-Run the **Release** workflow with a version number:
-
-```bash
-gh workflow run release.yml -f version=0.2.0
-```
-
-It bumps the version in the script and plugin manifests, tags the commit, creates a GitHub release, and updates the Homebrew formula in [artemnovichkov/homebrew-tap](https://github.com/artemnovichkov/homebrew-tap).
 
 ## Author
 
