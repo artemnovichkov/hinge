@@ -2,9 +2,9 @@
   <img src=".github/images/icon.png" width="128" alt="hinge icon">
 </p>
 
-# hinge
+<h1 align="center">hinge</h1>
 
-<p>
+<p align="center">
   <a href="https://github.com/artemnovichkov/hinge/releases/latest"><img src="https://img.shields.io/github/v/release/artemnovichkov/hinge" alt="Latest release"></a>
   <a href="https://github.com/artemnovichkov/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-artemnovichkov%2Ftap-orange.svg" alt="Homebrew"></a>
   <img src="https://img.shields.io/badge/macOS-Xcode%2027.1+-blue.svg" alt="Xcode 27.1+">
