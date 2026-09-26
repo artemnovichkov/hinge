@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/images/icon.png" width="128" alt="hinge icon">
+</p>
+
 # hinge
 
 <p>
