@@ -3,6 +3,7 @@
 //
 //   hinge_helper set <degrees>
 //   hinge_helper sweep <from> <to> <seconds>
+//   hinge_helper orient <portrait|landscape-left|landscape-right|pud>
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>
@@ -30,13 +31,11 @@ enum {
     kSweepHz = 60,
 };
 
-static void send_angle(IOHIDEventSystemClientRef client, double degrees) {
-    if (degrees < 0) degrees = 0;
-    if (degrees > 180) degrees = 180;
-
-    CFNumberRef value = CFNumberCreate(NULL, kCFNumberDoubleType, &degrees);
+// Serializes the payload and dispatches it as the vendor-defined event Device Hub uses.
+static void send_payload(IOHIDEventSystemClientRef client, CFStringRef provider, CFStringRef source,
+    CFStringRef type, CFTypeRef value) {
     const void *keys[] = {CFSTR("provider"), CFSTR("source"), CFSTR("type"), CFSTR("value")};
-    const void *values[] = {CFSTR("com.apple.Virtualization"), CFSTR("hinge-slider-control"), CFSTR("range"), value};
+    const void *values[] = {provider, source, type, value};
     CFDictionaryRef payload = CFDictionaryCreate(NULL, keys, values, 4,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFDataRef data = IOCFSerialize(payload, kSerializeBinary);
@@ -51,12 +50,29 @@ static void send_angle(IOHIDEventSystemClientRef client, double degrees) {
         CFRelease(data);
     }
     CFRelease(payload);
+}
+
+static void send_angle(IOHIDEventSystemClientRef client, double degrees) {
+    if (degrees < 0) degrees = 0;
+    if (degrees > 180) degrees = 180;
+
+    CFNumberRef value = CFNumberCreate(NULL, kCFNumberDoubleType, &degrees);
+    send_payload(client, CFSTR("com.apple.Virtualization"), CFSTR("hinge-slider-control"), CFSTR("range"), value);
+    CFRelease(value);
+}
+
+// Same event as Device Hub's Controls > Rotate Left/Right, which sends the absolute target orientation.
+static void send_orientation(IOHIDEventSystemClientRef client, const char *orientation) {
+    CFStringRef value = CFStringCreateWithCString(NULL, orientation, kCFStringEncodingUTF8);
+    send_payload(client, CFSTR("com.apple.Virtualization.VirtualMachines"), CFSTR("orientation-picker-control"),
+        CFSTR("enum"), value);
     CFRelease(value);
 }
 
 static int usage(void) {
     fprintf(stderr, "usage: hinge_helper set <degrees>\n"
-                    "       hinge_helper sweep <from> <to> <seconds>\n");
+                    "       hinge_helper sweep <from> <to> <seconds>\n"
+                    "       hinge_helper orient <orientation>\n");
     return 64;
 }
 
@@ -71,6 +87,8 @@ int main(int argc, char **argv) {
 
     if (strcmp(argv[1], "set") == 0 && argc == 3) {
         send_angle(client, atof(argv[2]));
+    } else if (strcmp(argv[1], "orient") == 0 && argc == 3) {
+        send_orientation(client, argv[2]);
     } else if (strcmp(argv[1], "sweep") == 0 && argc == 5) {
         double from = atof(argv[2]), to = atof(argv[3]), seconds = fmax(atof(argv[4]), 0);
         int steps = (int)fmax(1, round(seconds * kSweepHz));

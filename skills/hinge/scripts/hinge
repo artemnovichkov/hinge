@@ -20,6 +20,10 @@ Commands:
   half                        Half-open (90°)
   sweep <from> <to> [seconds] Animate between two angles (default 1s)
   get                         Print current hinge angle
+  rotate <left|right>         Rotate 90°, like Device Hub's Rotate Left/Right
+  orient <orientation>        Set orientation: portrait, landscape-left, landscape-right,
+                              portrait-upside-down
+  orientation                 Print current orientation
   help                        Show this help
 
 Options:
@@ -102,6 +106,54 @@ get_angle() {
   echo "$angle"
 }
 
+# Prints the current orientation in the event's naming, e.g. "landscape-left".
+get_orientation() {
+  local udid
+  udid="$(resolve_udid)"
+  xcrun devicectl device orientation get -d "$udid" -q -j - 2>/dev/null \
+    | plutil -extract result.deviceOrientationNonFlat raw -o - - 2>/dev/null \
+    | sed -E 's/([a-z])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]' \
+    || die "failed to read orientation"
+}
+
+# Foldables only follow Device Hub's orientation event; other simulators ignore it, so fall back to devicectl.
+# Device Hub abbreviates portrait-upside-down to "pud" in the event.
+set_orientation() {
+  local event_value="$1" devicectl_name
+  case "$1" in
+    portrait) devicectl_name=portrait ;;
+    landscape-left) devicectl_name=landscapeLeft ;;
+    landscape-right) devicectl_name=landscapeRight ;;
+    portrait-upside-down) devicectl_name=portraitUpsideDown; event_value=pud ;;
+    *) die "orientation must be portrait, landscape-left, landscape-right, or portrait-upside-down: $1" ;;
+  esac
+  run_helper orient "$event_value"
+  [[ "$(get_orientation)" == "$1" ]] && return
+  xcrun devicectl device orientation set "$devicectl_name" -d "$(resolve_udid)" -q >/dev/null 2>&1 || true
+  [[ "$(get_orientation)" == "$1" ]] || die "orientation did not change to $1"
+}
+
+# Steps 90° from the current orientation in Device Hub's order: Rotate Left goes portrait -> landscape-left
+# -> portrait-upside-down -> landscape-right, and Rotate Right goes the other way.
+rotate() {
+  local order=(portrait landscape-left portrait-upside-down landscape-right) current step i
+  case "$1" in
+    left|l) step=1 ;;
+    right|r) step=3 ;;
+    *) die "direction must be left or right: $1" ;;
+  esac
+  current="$(get_orientation)"
+  for i in 0 1 2 3; do
+    if [[ "${order[$i]}" == "$current" ]]; then
+      local target="${order[$(( (i + step) % 4 ))]}"
+      set_orientation "$target"
+      echo "$target"
+      return
+    fi
+  done
+  die "unknown current orientation: $current"
+}
+
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -126,6 +178,9 @@ main() {
       run_helper sweep "$1" "$2" "$seconds"
       ;;
     get) get_angle ;;
+    rotate) [[ $# -eq 1 ]] || die "usage: hinge rotate <left|right>"; rotate "$1" ;;
+    orient) [[ $# -eq 1 ]] || die "usage: hinge orient <orientation>"; set_orientation "$1" ;;
+    orientation) get_orientation ;;
     *)
       is_number "$cmd" || { usage >&2; exit 64; }
       set_angle "$cmd"
