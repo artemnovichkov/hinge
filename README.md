@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://github.com/artemnovichkov/hinge/releases/latest"><img src="https://img.shields.io/github/v/release/artemnovichkov/hinge" alt="Latest release"></a>
   <a href="https://github.com/artemnovichkov/homebrew-tap"><img src="https://img.shields.io/badge/homebrew-artemnovichkov%2Ftap-orange.svg" alt="Homebrew"></a>
+  <a href="https://skills.sh/artemnovichkov/hinge/hinge"><img src="https://img.shields.io/badge/skills.sh-hinge-black.svg" alt="skills.sh"></a>
   <img src="https://img.shields.io/badge/macOS-Xcode%2027.1+-blue.svg" alt="Xcode 27.1+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="MIT License"></a>
 </p>
@@ -19,6 +20,7 @@ https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
 hinge 120            # set the angle: 0 = closed, 180 = flat
 hinge sweep 180 0 2  # fold closed over 2 seconds
 hinge get            # 120.0
+hinge posture        # angle, orientation, and the active display
 ```
 
 Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `simctl` or `devicectl` command to set the angle. `hinge` fills that gap.
@@ -48,7 +50,7 @@ The first run compiles a small helper with Xcode's clang and caches it in `~/.ca
 ## Usage
 
 ```
-Usage: hinge [-d <device>] <command>
+Usage: hinge [-d <device>] [-t <seconds>] <command>
 
 Commands:
   <degrees>                   Set hinge angle, 0 (closed) to 180 (flat)
@@ -58,6 +60,7 @@ Commands:
   half                        Half-open (90°)
   sweep <from> <to> [seconds] Animate between two angles (default 1s)
   get                         Print current hinge angle
+  posture                     Print the angle, orientation, and integrated displays
   rotate <left|right>         Rotate 90°, like Device Hub's Rotate Left/Right
   orient <orientation>        Set orientation: portrait, landscape-left, landscape-right,
                               portrait-upside-down
@@ -66,8 +69,31 @@ Commands:
 
 Options:
   -d, --device <device>       Simulator UDID, name, or "booted" (default)
+  -t, --timeout <seconds>     Seconds to confirm a new angle (default 2, 0 to skip)
   -v, --version               Print version
 ```
+
+`open`, `close` and `half` also take `unfolded`/`flat`, `closed`/`folded` and `half-open`.
+
+Setting an angle waits until CoreMotion reports it, so a change the simulator ignores
+is an error instead of a silent success. That also means `hinge 90` on a simulator
+without a hinge fails. `-t 0` sends the event without waiting.
+
+`half` is 90°. Device Hub's own half-open preset is 130° (`hinge 130`).
+
+`posture` adds the display side of a fold, from `devicectl`:
+
+```
+$ hinge posture
+angle: 180.0
+orientation: portrait
+display: LCD (primary)
+display: LCD-1 (active)
+```
+
+On the iPhone Duo, `LCD` is the cover display and `LCD-1` the inner one. The `active`
+flag is what tells which display hosts the UI; a locked device keeps its display
+active with the backlight dimmed.
 
 ## Agent skill
 
@@ -103,9 +129,9 @@ The hinge slider in Device Hub sends a vendor-defined HID event to the simulator
 |---|---|
 | Usage page | `0xFF61` |
 | Usage | `0x5B` |
-| Data | Binary-serialized dictionary: `provider = "com.apple.Virtualization"`, `source = "hinge-slider-control"`, `type = "range"`, `value = <degrees>` |
+| Data | Binary-serialized dictionary: `provider = "com.apple.Virtualization.VirtualMachines"`, `source = "hinge-slider-control"`, `type = "range"`, `value = <degrees>` |
 
-Device Hub's Rotate Left/Right on a foldable sends an event on the same usage page and usage, with `provider = "com.apple.Virtualization.VirtualMachines"`, `source = "orientation-picker-control"`, `type = "enum"`, and `value` set to the target orientation: `portrait`, `landscape-left`, `landscape-right`, or `pud` (portrait upside down).
+Device Hub's Rotate Left/Right on a foldable sends an event on the same usage page and usage, with `source = "orientation-picker-control"`, `type = "enum"`, and `value` set to the target orientation: `portrait`, `landscape-left`, `landscape-right`, or `pud` (portrait upside down). The simulator does not check `provider`; `hinge` sends Device Hub's value for both events.
 
 `hinge` builds a small helper for the iOS Simulator SDK and runs it inside the simulator with `xcrun simctl spawn`. The helper creates the same event and dispatches it through the simulator's `IOHIDEventSystem`. The current angle is read back from CoreMotion's private `CMAngleManager`, the same source UIKit's `UIHinge` reads.
 
@@ -114,6 +140,8 @@ Device Hub's Rotate Left/Right on a foldable sends an event on the same usage pa
 - Simulator only. Physical devices are not supported.
 - The protocol is private and undocumented. It was verified with Xcode 27.1 and the iOS 27.1 runtime and may break with future releases.
 - The Device Hub slider doesn't move when the angle changes from `hinge`.
+- Which display becomes active at an angle between 0° and 180° depends on the path the hinge took. Only 0° (cover) and 180° (inner) are deterministic: a jump from 0° to 90° switches to the inner display, while 5° steps up to 90° stay on the cover. A slow `sweep` can therefore keep the previous display active until it reaches the end.
+- `orient`, `orientation` and `rotate` use **device** orientations, the names `devicectl` reports. They are not interface orientations: a device in `landscape-right` shows a `landscape-left` interface.
 
 ## Author
 

@@ -7,10 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 HELPER_SRC="$SCRIPT_DIR/hinge_helper.m"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hinge"
 DEVICE="booted"
+# Seconds to wait for CoreMotion to report a new angle; 0 sends without confirming.
+TIMEOUT=2
 
 usage() {
   cat <<EOF
-Usage: hinge [-d <device>] <command>
+Usage: hinge [-d <device>] [-t <seconds>] <command>
 
 Commands:
   <degrees>                   Set hinge angle, 0 (closed) to 180 (flat)
@@ -20,6 +22,7 @@ Commands:
   half                        Half-open (90°)
   sweep <from> <to> [seconds] Animate between two angles (default 1s)
   get                         Print current hinge angle
+  posture                     Print the angle, orientation, and integrated displays
   rotate <left|right>         Rotate 90°, like Device Hub's Rotate Left/Right
   orient <orientation>        Set orientation: portrait, landscape-left, landscape-right,
                               portrait-upside-down
@@ -28,6 +31,7 @@ Commands:
 
 Options:
   -d, --device <device>       Simulator UDID, name, or "booted" (default)
+  -t, --timeout <seconds>     Seconds to confirm a new angle (default 2, 0 to skip)
   -v, --version               Print version
 EOF
 }
@@ -36,23 +40,40 @@ die() { echo "hinge: $*" >&2; exit 1; }
 
 is_number() { [[ "$1" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; }
 
+# An angle outside 0-180 is a mistake, not something to clamp silently.
+is_angle() { is_number "$1" && awk -v value="$1" 'BEGIN { exit !(value >= 0 && value <= 180) }'; }
+
+require_angle() { is_angle "$1" || die "angle must be a number from 0 to 180: $1"; }
+
+# Prints "<udid><tab><name>" for every booted simulator. The UDID and the
+# "(Booted)" tag anchor the parse, so a name with parentheses still matches.
+booted_devices() {
+  xcrun simctl list devices booted 2>/dev/null | awk '
+    /\(Booted\)[ \t]*$/ {
+      line = $0
+      sub(/[ \t]*\(Booted\)[ \t]*$/, "", line)
+      if (match(line, /\([-0-9A-Fa-f]+\)$/)) {
+        name = substr(line, 1, RSTART - 2)
+        sub(/^[ \t]+/, "", name)
+        print substr(line, RSTART + 1, RLENGTH - 2) "\t" name
+      }
+    }'
+}
+
 # Resolves the device argument to a booted simulator UDID.
 resolve_udid() {
-  local booted
-  booted="$(xcrun simctl list devices booted 2>/dev/null | grep -E '\(Booted\)' || true)"
-  [[ -n "$booted" ]] || die "no booted simulator"
+  local devices udid
+  devices="$(booted_devices)"
+  [[ -n "$devices" ]] || die "no booted simulator"
   if [[ "$DEVICE" =~ ^[0-9A-Fa-f-]{36}$ ]]; then
     echo "$DEVICE"
-    return
-  fi
-  local line
-  if [[ "$DEVICE" == "booted" ]]; then
-    line="$(echo "$booted" | head -1)"
+  elif [[ "$DEVICE" == "booted" ]]; then
+    echo "$devices" | head -1 | cut -f1
   else
-    line="$(echo "$booted" | grep -F "    $DEVICE (" | head -1 || true)"
-    [[ -n "$line" ]] || die "no booted simulator named \"$DEVICE\""
+    udid="$(echo "$devices" | awk -F'\t' -v name="$DEVICE" '$2 == name { print $1; exit }')"
+    [[ -n "$udid" ]] || die "no booted simulator named \"$DEVICE\""
+    echo "$udid"
   fi
-  echo "$line" | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/'
 }
 
 # Builds the in-simulator helper once per source and Xcode version.
@@ -78,9 +99,11 @@ run_helper() {
   xcrun simctl spawn "$udid" "$bin" "$@"
 }
 
+# The helper confirms the angle from CoreMotion, so a simulator without a hinge
+# fails here instead of reporting a change that never happened.
 set_angle() {
-  is_number "$1" || die "angle must be a number: $1"
-  run_helper set "$1"
+  require_angle "$1"
+  run_helper set "$1" "$TIMEOUT"
 }
 
 # Prints the current orientation in the event's naming, e.g. "landscape-left".
@@ -131,10 +154,40 @@ rotate() {
   die "unknown current orientation: $current"
 }
 
+# Reads one field of the n-th display from a devicectl displays document.
+display_field() {
+  printf '%s' "$1" | plutil -extract "result.displays.$2.$3" raw -o - - 2>/dev/null
+}
+
+# Which integrated display hosts the UI is the "active" flag, not the backlight:
+# a locked device keeps its display active with the backlight dimmed.
+posture() {
+  local udid displays i name flags angle
+  udid="$(resolve_udid)"
+  if angle="$(run_helper get)"; then echo "angle: $angle"; else echo "angle: unavailable"; fi
+  echo "orientation: $(get_orientation)"
+  displays="$(xcrun devicectl device info displays -d "$udid" -q -j - 2>/dev/null)" \
+    || die "failed to read displays"
+  i=0
+  while name="$(display_field "$displays" "$i" name)"; do
+    if display_field "$displays" "$i" type.integrated >/dev/null; then
+      flags=""
+      if [[ "$(display_field "$displays" "$i" primary)" == true ]]; then flags=" (primary)"; fi
+      if [[ "$(display_field "$displays" "$i" active)" == true ]]; then flags="$flags (active)"; fi
+      echo "display: $name$flags"
+    fi
+    i=$((i + 1))
+  done
+}
+
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -d|--device) [[ $# -ge 2 ]] || die "missing value for $1"; DEVICE="$2"; shift 2 ;;
+      -t|--timeout)
+        [[ $# -ge 2 ]] || die "missing value for $1"
+        is_number "$2" || die "timeout must be a number: $2"
+        TIMEOUT="$2"; shift 2 ;;
       -v|--version) echo "$VERSION"; exit 0 ;;
       -h|--help|help) usage; exit 0 ;;
       *) break ;;
@@ -145,16 +198,19 @@ main() {
   local cmd="$1"; shift
   case "$cmd" in
     set) [[ $# -eq 1 ]] || die "usage: hinge set <degrees>"; set_angle "$1" ;;
-    open) set_angle 180 ;;
-    close) set_angle 0 ;;
-    half) set_angle 90 ;;
+    open|flat|unfolded) set_angle 180 ;;
+    close|closed|folded) set_angle 0 ;;
+    half|half-open) set_angle 90 ;;
     sweep)
       [[ $# -ge 2 && $# -le 3 ]] || die "usage: hinge sweep <from> <to> [seconds]"
       local seconds="${3:-1}"
-      for n in "$1" "$2" "$seconds"; do is_number "$n" || die "not a number: $n"; done
+      require_angle "$1"
+      require_angle "$2"
+      is_number "$seconds" || die "not a number: $seconds"
       run_helper sweep "$1" "$2" "$seconds"
       ;;
     get) run_helper get ;;
+    posture) posture ;;
     rotate) [[ $# -eq 1 ]] || die "usage: hinge rotate <left|right>"; rotate "$1" ;;
     orient) [[ $# -eq 1 ]] || die "usage: hinge orient <orientation>"; set_orientation "$1" ;;
     orientation) get_orientation ;;

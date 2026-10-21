@@ -2,7 +2,7 @@
 // vendor-defined HID event that the hidden hinge slider in Xcode's Device Hub sends.
 // It also reads the current angle back from CoreMotion.
 //
-//   hinge_helper set <degrees>
+//   hinge_helper set <degrees> [confirm-seconds]
 //   hinge_helper sweep <from> <to> <seconds>
 //   hinge_helper orient <portrait|landscape-left|landscape-right|pud>
 //   hinge_helper get
@@ -35,8 +35,18 @@ enum {
     kSweepHz = 60,
 };
 
+// The simulator does not check the provider name, but this is the one Device Hub
+// sends for both the hinge slider and the orientation picker.
+static CFStringRef const kProvider = CFSTR("com.apple.Virtualization.VirtualMachines");
+
 // Seconds to wait for the first angle update before giving up.
 static const CFTimeInterval kAngleTimeout = 2;
+// How close a reported angle must be to count as the angle that was sent.
+static const double kAngleTolerance = 0.5;
+// The run loop runs in slices, so an update that lands before it starts is not missed.
+static const CFTimeInterval kRunLoopSlice = 0.05;
+// Time to let the last event leave before the process exits.
+static const useconds_t kSettleMicros = 20000;
 
 // CoreMotion's private angle API, the same source UIKit's UIHinge reads.
 @interface CMAngle : NSObject
@@ -49,11 +59,16 @@ static const CFTimeInterval kAngleTimeout = 2;
 - (void)stopAngleUpdates;
 @end
 
+typedef enum {
+    kObserveUnavailable = -1,
+    kObserveTimedOut = 0,
+    kObserveAccepted = 1,
+} ObserveResult;
+
 // Serializes the payload and dispatches it as the vendor-defined event Device Hub uses.
-static void send_payload(IOHIDEventSystemClientRef client, CFStringRef provider, CFStringRef source,
-    CFStringRef type, CFTypeRef value) {
+static void send_payload(IOHIDEventSystemClientRef client, CFStringRef source, CFStringRef type, CFTypeRef value) {
     const void *keys[] = {CFSTR("provider"), CFSTR("source"), CFSTR("type"), CFSTR("value")};
-    const void *values[] = {provider, source, type, value};
+    const void *values[] = {kProvider, source, type, value};
     CFDictionaryRef payload = CFDictionaryCreate(NULL, keys, values, 4,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFDataRef data = IOCFSerialize(payload, kSerializeBinary);
@@ -70,49 +85,80 @@ static void send_payload(IOHIDEventSystemClientRef client, CFStringRef provider,
     CFRelease(payload);
 }
 
-static void send_angle(IOHIDEventSystemClientRef client, double degrees) {
-    if (degrees < 0) degrees = 0;
-    if (degrees > 180) degrees = 180;
+static double clamp_angle(double degrees) {
+    if (degrees < 0) return 0;
+    if (degrees > 180) return 180;
+    return degrees;
+}
 
+static void send_angle(IOHIDEventSystemClientRef client, double degrees) {
+    degrees = clamp_angle(degrees);
     CFNumberRef value = CFNumberCreate(NULL, kCFNumberDoubleType, &degrees);
-    send_payload(client, CFSTR("com.apple.Virtualization"), CFSTR("hinge-slider-control"), CFSTR("range"), value);
+    send_payload(client, CFSTR("hinge-slider-control"), CFSTR("range"), value);
     CFRelease(value);
 }
 
 // Same event as Device Hub's Controls > Rotate Left/Right, which sends the absolute target orientation.
 static void send_orientation(IOHIDEventSystemClientRef client, const char *orientation) {
     CFStringRef value = CFStringCreateWithCString(NULL, orientation, kCFStringEncodingUTF8);
-    send_payload(client, CFSTR("com.apple.Virtualization.VirtualMachines"), CFSTR("orientation-picker-control"),
-        CFSTR("enum"), value);
+    send_payload(client, CFSTR("orientation-picker-control"), CFSTR("enum"), value);
     CFRelease(value);
 }
 
-// Prints the current angle. CoreMotion delivers the first update right away, without waiting for a change.
-static int print_angle(void) {
+// Starts angle updates, runs `afterStart`, then waits until `accept` takes an update
+// or `timeout` passes. CoreMotion delivers the first update right away, without
+// waiting for a change.
+static ObserveResult observe_angles(CFTimeInterval timeout, void (^afterStart)(void), bool (^accept)(double degrees)) {
     Class managerClass = NSClassFromString(@"CMAngleManager");
     if (!managerClass || ![managerClass isAvailable]) {
         fprintf(stderr, "hinge_helper: this simulator reports no hinge\n");
-        return 1;
+        return kObserveUnavailable;
     }
 
     id manager = [[managerClass alloc] init];
-
-    __block bool printed = false;
+    __block bool accepted = false;
     [manager startAngleUpdatesToQueue:[NSOperationQueue new] handler:^(CMAngle *angle) {
-        if (printed) return;
-        printed = true;
-        printf("%.1f\n", [angle angleDegrees]);
-        CFRunLoopStop(CFRunLoopGetMain());
+        if (!accepted && accept([angle angleDegrees])) accepted = true;
     }];
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, kAngleTimeout, false);
-    [manager stopAngleUpdates];
+    if (afterStart) afterStart();
 
-    if (!printed) fprintf(stderr, "hinge_helper: timed out reading the hinge angle\n");
-    return printed ? 0 : 1;
+    CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + timeout;
+    while (!accepted && CFAbsoluteTimeGetCurrent() < deadline) {
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, kRunLoopSlice, false);
+    }
+    [manager stopAngleUpdates];
+    return accepted ? kObserveAccepted : kObserveTimedOut;
+}
+
+static int print_angle(void) {
+    __block double current = 0;
+    ObserveResult result = observe_angles(kAngleTimeout, NULL, ^bool(double degrees) {
+        current = degrees;
+        return true;
+    });
+    if (result == kObserveTimedOut) fprintf(stderr, "hinge_helper: timed out reading the hinge angle\n");
+    if (result != kObserveAccepted) return 1;
+    printf("%.1f\n", current);
+    return 0;
+}
+
+// Sends the angle and waits for CoreMotion to report it, so the caller knows the
+// simulator took the change instead of only that the event was dispatched.
+static int set_angle_confirmed(IOHIDEventSystemClientRef client, double degrees, CFTimeInterval timeout) {
+    double target = clamp_angle(degrees);
+    ObserveResult result = observe_angles(timeout, ^{
+        send_angle(client, target);
+    }, ^bool(double reported) {
+        return fabs(reported - target) <= kAngleTolerance;
+    });
+    if (result == kObserveTimedOut) {
+        fprintf(stderr, "hinge_helper: the hinge angle did not reach %.1f within %.1f s\n", target, timeout);
+    }
+    return result == kObserveAccepted ? 0 : 1;
 }
 
 static int usage(void) {
-    fprintf(stderr, "usage: hinge_helper set <degrees>\n"
+    fprintf(stderr, "usage: hinge_helper set <degrees> [confirm-seconds]\n"
                     "       hinge_helper sweep <from> <to> <seconds>\n"
                     "       hinge_helper orient <orientation>\n"
                     "       hinge_helper get\n");
@@ -130,7 +176,10 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (strcmp(argv[1], "set") == 0 && argc == 3) {
+    if (strcmp(argv[1], "set") == 0 && argc <= 4) {
+        // A confirm timeout above 0 waits for the angle to be reported back.
+        double timeout = argc == 4 ? atof(argv[3]) : 0;
+        if (timeout > 0) return set_angle_confirmed(client, atof(argv[2]), timeout);
         send_angle(client, atof(argv[2]));
     } else if (strcmp(argv[1], "orient") == 0 && argc == 3) {
         send_orientation(client, argv[2]);
@@ -145,7 +194,6 @@ int main(int argc, char **argv) {
         return usage();
     }
 
-    // Give the event system a moment to deliver before the process exits.
-    usleep(100000);
+    usleep(kSettleMicros);
     return 0;
 }
