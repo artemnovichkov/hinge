@@ -33,17 +33,18 @@ scripts/hinge -t 0 90            # set without waiting for the angle to be confi
 
 1. Make sure a foldable simulator is booted: `xcrun simctl list devices booted`.
 2. Set the angle. The command returns once the simulator reports the new angle, so a non-zero exit means the fold did not happen — don't poll `get` to check it.
-3. Wait about half a second before you screenshot or read the UI: the display switch takes 1-2.5 s after the angle changes.
+3. Wait for the display to switch before you screenshot or read the UI: it takes 1-2.5 s after the angle changes.
 4. `scripts/hinge posture` tells which display hosts the UI (`active`) after a fold.
-5. Screenshots: `xcrun simctl io booted screenshot out.png`. For the outer display, add `--display=1`.
+5. Screenshots need a display on a foldable, or `simctl` fails with `Invalid argument`:
+   `xcrun simctl io booted screenshot --display=LCD-1 out.png` for the inner display, `--display=LCD` for the cover. The numeric ids are `3` and `1`.
 
 ## Notes
 
 - Simulator only. It does not work on physical devices.
 - The first run compiles a tiny helper with Xcode's clang, caching it under `~/.cache/hinge`. It takes a few seconds.
 - A `sweep` runs at 60 Hz in one process. For a smooth animation, use it instead of many `set` calls. It does not confirm the final angle.
-- Only 0° and 180° reliably switch the active display. At angles in between, the result depends on the path the hinge took, so a slow `sweep` can keep the previous display active until the end. To be sure a display switched, set 0° or 180° and check `posture`.
+- Setting the angle is not the same as switching the display. The angle is confirmed; the display switch is up to the simulator. 0° and 180° usually switch it, angles in between depend on the path the hinge took (a slow `sweep` can keep the previous display until the end), and sometimes the simulator stops following the hinge altogether while still reporting new angles. Always check with `posture` instead of assuming; a simulator that stopped following the hinge keeps reporting correct angles, and a shutdown and boot clears it.
 - Angles outside 0-180 are rejected. A simulator without a hinge fails with "this simulator reports no hinge".
 - `orient`, `orientation` and `rotate` use device orientations (the `devicectl` names), not interface orientations: a device in `landscape-right` shows a `landscape-left` interface.
 - Orientation on a foldable follows only Device Hub's own event; `xcrun devicectl device orientation set` reports success there but is reverted. `rotate`/`orient` send Device Hub's event and fall back to `devicectl` on simulators that ignore it.
-- This uses a private, undocumented protocol. It was verified with Xcode 27.1 and iOS 27.1 and may break in other versions. If setting an angle fails with "the hinge angle did not reach ...", report that the protocol has likely changed.
+- This uses a private, undocumented protocol. It was verified with Xcode 27.1 and 27.2 on iOS 27.1 and may break in other versions. If setting an angle fails with "the hinge angle did not reach ...", report that the protocol has likely changed.

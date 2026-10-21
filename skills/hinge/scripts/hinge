@@ -32,6 +32,7 @@ Commands:
 Options:
   -d, --device <device>       Simulator UDID, name, or "booted" (default)
   -t, --timeout <seconds>     Seconds to confirm a new angle (default 2, 0 to skip)
+  -h, --help                  Show this help
   -v, --version               Print version
 EOF
 }
