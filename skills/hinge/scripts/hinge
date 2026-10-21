@@ -4,7 +4,7 @@ set -euo pipefail
 
 VERSION="0.1.0"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-HELPER_SRC="$SCRIPT_DIR/hinge_helper.c"
+HELPER_SRC="$SCRIPT_DIR/hinge_helper.m"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hinge"
 DEVICE="booted"
 
@@ -62,9 +62,9 @@ helper_path() {
   local bin="$CACHE_DIR/hinge_helper-$key"
   if [[ ! -x "$bin" ]]; then
     mkdir -p "$CACHE_DIR"
-    xcrun -sdk iphonesimulator clang -arch arm64 -mios-simulator-version-min=17.0 -O2 \
-      -o "$bin.tmp" "$HELPER_SRC" -framework IOKit -framework CoreFoundation \
-      || die "failed to build helper"
+    xcrun -sdk iphonesimulator clang -arch arm64 -mios-simulator-version-min=17.0 -O2 -fobjc-arc \
+      -o "$bin.tmp" "$HELPER_SRC" -framework IOKit -framework CoreFoundation -framework Foundation \
+      -framework CoreMotion || die "failed to build helper"
     codesign -f -s - "$bin.tmp" >/dev/null 2>&1 || die "failed to sign helper"
     mv "$bin.tmp" "$bin"
   fi
@@ -81,29 +81,6 @@ run_helper() {
 set_angle() {
   is_number "$1" || die "angle must be a number: $1"
   run_helper set "$1"
-}
-
-get_angle() {
-  local udid out pid angle=""
-  udid="$(resolve_udid)"
-  out="$(mktemp)"
-  xcrun devicectl device motion hinge-angle -d "$udid" --session-timeout 5 -t 10 >"$out" 2>&1 &
-  pid=$!
-  for _ in $(seq 1 80); do
-    angle="$(grep -m1 -oE 'Angle: *[0-9]+([.,][0-9]+)?' "$out" | grep -oE '[0-9]+([.,][0-9]+)?' | tr , . || true)"
-    [[ -n "$angle" ]] && break
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.1
-  done
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  if [[ -z "$angle" ]]; then
-    cat "$out" >&2
-    rm -f "$out"
-    die "failed to read hinge angle"
-  fi
-  rm -f "$out"
-  echo "$angle"
 }
 
 # Prints the current orientation in the event's naming, e.g. "landscape-left".
@@ -177,7 +154,7 @@ main() {
       for n in "$1" "$2" "$seconds"; do is_number "$n" || die "not a number: $n"; done
       run_helper sweep "$1" "$2" "$seconds"
       ;;
-    get) get_angle ;;
+    get) run_helper get ;;
     rotate) [[ $# -eq 1 ]] || die "usage: hinge rotate <left|right>"; rotate "$1" ;;
     orient) [[ $# -eq 1 ]] || die "usage: hinge orient <orientation>"; set_orientation "$1" ;;
     orientation) get_orientation ;;

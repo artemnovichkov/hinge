@@ -1,9 +1,13 @@
 // Runs inside the iOS Simulator (via `xcrun simctl spawn`) and posts the same
 // vendor-defined HID event that the hidden hinge slider in Xcode's Device Hub sends.
+// It also reads the current angle back from CoreMotion.
 //
 //   hinge_helper set <degrees>
 //   hinge_helper sweep <from> <to> <seconds>
 //   hinge_helper orient <portrait|landscape-left|landscape-right|pud>
+//   hinge_helper get
+
+#import <Foundation/Foundation.h>
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>
@@ -30,6 +34,20 @@ enum {
     kSerializeBinary = 1,
     kSweepHz = 60,
 };
+
+// Seconds to wait for the first angle update before giving up.
+static const CFTimeInterval kAngleTimeout = 2;
+
+// CoreMotion's private angle API, the same source UIKit's UIHinge reads.
+@interface CMAngle : NSObject
+- (float)angleDegrees;
+@end
+
+@interface CMAngleManager : NSObject
++ (BOOL)isAvailable;
+- (void)startAngleUpdatesToQueue:(NSOperationQueue *)queue handler:(void (^)(CMAngle *angle))handler;
+- (void)stopAngleUpdates;
+@end
 
 // Serializes the payload and dispatches it as the vendor-defined event Device Hub uses.
 static void send_payload(IOHIDEventSystemClientRef client, CFStringRef provider, CFStringRef source,
@@ -69,14 +87,41 @@ static void send_orientation(IOHIDEventSystemClientRef client, const char *orien
     CFRelease(value);
 }
 
+// Prints the current angle. CoreMotion delivers the first update right away, without waiting for a change.
+static int print_angle(void) {
+    Class managerClass = NSClassFromString(@"CMAngleManager");
+    if (!managerClass || ![managerClass isAvailable]) {
+        fprintf(stderr, "hinge_helper: this simulator reports no hinge\n");
+        return 1;
+    }
+
+    id manager = [[managerClass alloc] init];
+
+    __block bool printed = false;
+    [manager startAngleUpdatesToQueue:[NSOperationQueue new] handler:^(CMAngle *angle) {
+        if (printed) return;
+        printed = true;
+        printf("%.1f\n", [angle angleDegrees]);
+        CFRunLoopStop(CFRunLoopGetMain());
+    }];
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, kAngleTimeout, false);
+    [manager stopAngleUpdates];
+
+    if (!printed) fprintf(stderr, "hinge_helper: timed out reading the hinge angle\n");
+    return printed ? 0 : 1;
+}
+
 static int usage(void) {
     fprintf(stderr, "usage: hinge_helper set <degrees>\n"
                     "       hinge_helper sweep <from> <to> <seconds>\n"
-                    "       hinge_helper orient <orientation>\n");
+                    "       hinge_helper orient <orientation>\n"
+                    "       hinge_helper get\n");
     return 64;
 }
 
 int main(int argc, char **argv) {
+    if (argc < 2) return usage();
+    if (strcmp(argv[1], "get") == 0 && argc == 2) return print_angle();
     if (argc < 3) return usage();
 
     IOHIDEventSystemClientRef client = IOHIDEventSystemClientCreateWithType(NULL, kClientTypeSimple, NULL);

@@ -36,7 +36,6 @@ scripts/hinge -d "iPhone Duo" 90 # target a simulator by name or UDID (default: 
 
 - Simulator only. It does not work on physical devices.
 - The first run compiles a tiny helper with Xcode's clang, caching it under `~/.cache/hinge`. It takes a few seconds.
-- `get` takes about 1–2 seconds because it samples `devicectl device motion hinge-angle`.
 - A `sweep` runs at 60 Hz in one process. For a smooth animation, use it instead of many `set` calls.
 - Orientation on a foldable follows only Device Hub's own event; `xcrun devicectl device orientation set` reports success there but is reverted. `rotate`/`orient` send Device Hub's event and fall back to `devicectl` on simulators that ignore it.
 - This uses a private, undocumented protocol. It was verified with Xcode 27.1 and iOS 27.1 and may break in other versions. If `set` succeeds but `get` doesn't change, report that the protocol has likely changed.

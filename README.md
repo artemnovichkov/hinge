@@ -107,7 +107,7 @@ The hinge slider in Device Hub sends a vendor-defined HID event to the simulator
 
 Device Hub's Rotate Left/Right on a foldable sends an event on the same usage page and usage, with `provider = "com.apple.Virtualization.VirtualMachines"`, `source = "orientation-picker-control"`, `type = "enum"`, and `value` set to the target orientation: `portrait`, `landscape-left`, `landscape-right`, or `pud` (portrait upside down).
 
-`hinge` builds a small helper for the iOS Simulator SDK and runs it inside the simulator with `xcrun simctl spawn`. The helper creates the same event and dispatches it through the simulator's `IOHIDEventSystem`. The current angle is read back with `xcrun devicectl device motion hinge-angle`.
+`hinge` builds a small helper for the iOS Simulator SDK and runs it inside the simulator with `xcrun simctl spawn`. The helper creates the same event and dispatches it through the simulator's `IOHIDEventSystem`. The current angle is read back from CoreMotion's private `CMAngleManager`, the same source UIKit's `UIHinge` reads.
 
 ## Limitations
 
