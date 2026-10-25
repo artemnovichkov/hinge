@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="MIT License"></a>
 </p>
 
-Let AI coding agents like Claude Code and Codex fold a foldable iPhone Simulator (iPhone Duo) while they build and verify your app. `hinge` ships as an [Agent Skill](https://agentskills.io) with a bundled CLI.
+Let coding agents like Claude Code and Codex fold iPhone Duo while they build and verify your app. `hinge` ships as an [Agent Skill](https://agentskills.io) with a bundled CLI.
 
 https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
 
