@@ -12,9 +12,64 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-lightgrey.svg" alt="MIT License"></a>
 </p>
 
-Control the hinge angle of a foldable iPhone Simulator (iPhone Duo) from the command line, from scripts, or from AI coding agents like Claude Code and Codex.
+Let AI coding agents like Claude Code and Codex fold a foldable iPhone Simulator (iPhone Duo) while they build and verify your app. `hinge` ships as an [Agent Skill](https://agentskills.io) with a bundled CLI.
 
 https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
+
+Ask the agent things like:
+
+- *"Fold the simulator to 90° and take a screenshot of each display."*
+- *"Check how the onboarding screen looks on the cover and on the inner display."*
+- *"Unfold the simulator, rotate it to landscape, and verify the sidebar layout."*
+
+Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `simctl` or `devicectl` command to set the angle, so an agent has no way to fold the device. `hinge` fills that gap.
+
+## Requirements
+
+- macOS with Xcode 27.1 or later and a foldable iOS Simulator runtime
+- A booted foldable simulator, such as iPhone Duo
+
+## Installation
+
+[`skills/hinge`](skills/hinge) is self-contained: it bundles the CLI, so the agent needs nothing else.
+
+**[skills.sh](https://skills.sh)** (Claude Code, Codex, Cursor, and other agents):
+
+```bash
+npx skills add artemnovichkov/hinge
+```
+
+**Claude Code plugin:**
+
+```
+/plugin marketplace add artemnovichkov/hinge
+/plugin install hinge@hinge
+```
+
+**Manually:**
+
+```bash
+git clone https://github.com/artemnovichkov/hinge.git
+cp -R hinge/skills/hinge ~/.claude/skills/   # Claude Code
+cp -R hinge/skills/hinge ~/.codex/skills/    # Codex
+```
+
+The first run compiles a small helper with Xcode's clang and caches it in `~/.cache/hinge`.
+The cache keeps one build per helper version and Xcode version, and nothing prunes it.
+
+## What the skill teaches the agent
+
+A foldable has a few traps that make a naive agent report success when nothing changed. The skill covers them:
+
+- **Confirmed folds.** Setting an angle waits until CoreMotion reports it, so a non-zero exit means the fold did not happen. The agent doesn't poll to check.
+- **Display switches.** The angle and the active display are different things. The agent waits 1-2.5 s after a fold and checks which display hosts the UI with `posture` instead of assuming.
+- **Screenshots.** A foldable has two displays, and `simctl` fails with `Invalid argument` unless it is told which one to capture. The agent passes `--display`.
+- **Orientation.** `devicectl` reports success on a foldable but changes nothing. The agent rotates with Device Hub's own event.
+- **Protocol changes.** When an angle is not confirmed, the agent reports that the private protocol has likely changed.
+
+## CLI
+
+The same tool works without an agent: from the terminal, scripts, or CI.
 
 ```bash
 hinge 120            # set the angle: 0 = closed, 180 = flat
@@ -23,14 +78,7 @@ hinge sweep 180 0 2  # fold closed over 2 seconds
 hinge posture        # angle, orientation, and the active display
 ```
 
-Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `simctl` or `devicectl` command to set the angle. `hinge` fills that gap.
-
-## Requirements
-
-- macOS with Xcode 27.1 or later and a foldable iOS Simulator runtime
-- A booted foldable simulator, such as iPhone Duo
-
-## Installation
+### Installation
 
 **Homebrew:**
 
@@ -45,8 +93,7 @@ git clone https://github.com/artemnovichkov/hinge.git
 ln -s "$PWD/hinge/bin/hinge" /usr/local/bin/hinge
 ```
 
-The first run compiles a small helper with Xcode's clang and caches it in `~/.cache/hinge`.
-The cache keeps one build per helper version and Xcode version, and nothing prunes it.
+When `hinge` is on `PATH`, the skill can use it instead of its bundled copy.
 
 **Uninstall:**
 
@@ -55,7 +102,7 @@ brew uninstall hinge   # or, from source: rm /usr/local/bin/hinge
 rm -rf ~/.cache/hinge
 ```
 
-## Usage
+### Usage
 
 ```
 Usage: hinge [-d <device>] [-t <seconds>] <command>
@@ -82,7 +129,7 @@ Options:
   -v, --version               Print version
 ```
 
-### Setting the angle
+#### Setting the angle
 
 `open`, `close` and `half` also take `unfolded`/`flat`, `closed`/`folded` and `half-open`.
 `half` is 90°; Device Hub's own half-open preset is 130° (`hinge 130`).
@@ -91,7 +138,7 @@ Setting an angle waits until CoreMotion reports it, so a change the simulator ig
 is an error instead of a silent success. That also means `hinge 90` on a simulator
 without a hinge fails. `-t 0` sends the event without waiting.
 
-### Posture and screenshots
+#### Posture and screenshots
 
 `posture` adds the display side of a fold, from `devicectl`:
 
@@ -118,38 +165,12 @@ xcrun simctl io booted screenshot --display=LCD-1 inner.png  # 2853x2007
 
 The numeric ids work too: `1` for the cover, `3` for the inner display.
 
-### Orientation
+#### Orientation
 
 `rotate` and `orient` send Device Hub's orientation event, which only foldables follow.
 Other simulators ignore it, so `hinge` falls back to `xcrun devicectl device orientation set`
 there — on a foldable that command reports success without changing anything, which is
 why the event goes first.
-
-## Agent skill
-
-[`skills/hinge`](skills/hinge) is a self-contained [Agent Skill](https://agentskills.io) that bundles the CLI. It lets an agent fold the simulator while verifying your app.
-
-**[skills.sh](https://skills.sh)** (Claude Code, Codex, Cursor, and other agents):
-
-```bash
-npx skills add artemnovichkov/hinge
-```
-
-**Claude Code plugin:**
-
-```
-/plugin marketplace add artemnovichkov/hinge
-/plugin install hinge@hinge
-```
-
-**Manually:**
-
-```bash
-cp -R hinge/skills/hinge ~/.claude/skills/   # Claude Code
-cp -R hinge/skills/hinge ~/.codex/skills/    # Codex
-```
-
-Then ask the agent something like *"fold the simulator to 90° and take a screenshot"*.
 
 ## How it works
 
