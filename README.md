@@ -22,7 +22,18 @@ Ask the agent things like:
 - *"Check how the onboarding screen looks on the cover and on the inner display."*
 - *"Unfold the simulator, rotate it to landscape, and verify the sidebar layout."*
 
-Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `simctl` or `devicectl` command to set the angle, so an agent has no way to fold the device. `hinge` fills that gap.
+## Why
+
+Xcode's Device Hub has a hidden hinge slider (hold Option), but nothing scriptable can fold the device, so an agent has no way to test the inner display. Worse, the closest tools exit 0 and change nothing, so an agent carries on as if they worked:
+
+| You want to… | What Xcode offers | `hinge` |
+|---|---|---|
+| Fold or unfold | No `simctl` or `devicectl` command for the hinge | `hinge close`, `open`, `half`, `hinge <degrees>`, `sweep` |
+| Know the fold happened | No public way to read the angle back; `devicectl` 651 has no `motion` command | Waits until CoreMotion reports the angle, and fails if it doesn't |
+| Know which display shows the app | Nothing tells it apart from the hinge angle | `hinge posture` names the active display |
+| Screenshot what's showing | `simctl io screenshot` fails with `Invalid argument` on a foldable | `hinge screenshot` captures the active display |
+| Rotate | `devicectl device orientation set` reports success and is reverted | `hinge rotate`, `orient` |
+| Target the right simulator | `booted` picks one of several booted simulators | Picks the only booted iPhone Duo, and never guesses |
 
 ## Requirements
 
@@ -37,6 +48,13 @@ Xcode's Device Hub has a hidden hinge slider (hold Option), but there is no `sim
 
 ```bash
 npx skills add artemnovichkov/hinge
+```
+
+**[OpenSkills](https://github.com/numman-ali/openskills)** (any agent that reads `AGENTS.md`):
+
+```bash
+npx openskills install artemnovichkov/hinge
+npx openskills sync
 ```
 
 **Claude Code plugin:**
@@ -63,7 +81,8 @@ A foldable has a few traps that make a naive agent report success when nothing c
 
 - **Confirmed folds.** Setting an angle waits until CoreMotion reports it, so a non-zero exit means the fold did not happen. The agent doesn't poll to check.
 - **Display switches.** The angle and the active display are different things. The agent waits 1-2.5 s after a fold and checks which display hosts the UI with `posture` instead of assuming.
-- **Screenshots.** A foldable has two displays, and `simctl` fails with `Invalid argument` unless it is told which one to capture. The agent passes `--display`.
+- **Screenshots.** A foldable has two displays, and `simctl` fails with `Invalid argument` unless it is told which one to capture. The agent uses `hinge screenshot`, which captures the display that hosts the UI.
+- **The right simulator.** With several simulators booted, `hinge` picks the only iPhone Duo and refuses to guess between several.
 - **Orientation.** `devicectl` reports success on a foldable but changes nothing. The agent rotates with Device Hub's own event.
 - **Protocol changes.** When an angle is not confirmed, the agent reports that the private protocol has likely changed.
 
@@ -76,6 +95,8 @@ hinge 120            # set the angle: 0 = closed, 180 = flat
 hinge get            # 120.0
 hinge sweep 180 0 2  # fold closed over 2 seconds
 hinge posture        # angle, orientation, and the active display
+hinge screenshot out.png  # capture the display that hosts the UI
+hinge posture --json # the same as JSON, for scripts
 ```
 
 ### Installation
@@ -95,6 +116,24 @@ ln -s "$PWD/hinge/bin/hinge" /usr/local/bin/hinge
 
 When `hinge` is on `PATH`, the skill can use it instead of its bundled copy.
 
+**On CI**, on a macOS runner with Xcode 27.1 and the iOS 27.1 simulator runtime:
+
+```bash
+brew install artemnovichkov/tap/hinge
+UDID=$(xcrun simctl create ci-duo "iPhone Duo" com.apple.CoreSimulator.SimRuntime.iOS-27-1)
+xcrun simctl bootstatus "$UDID" -b
+export HINGE_DEVICE="$UDID"
+
+hinge open
+sleep 2.5                      # the display switches 1-2.5 s after the angle
+hinge screenshot unfolded.png
+hinge close
+sleep 2.5
+hinge screenshot folded.png
+```
+
+The first `hinge` call builds the helper, which takes a few seconds.
+
 **Uninstall:**
 
 ```bash
@@ -105,7 +144,7 @@ rm -rf ~/.cache/hinge
 ### Usage
 
 ```
-Usage: hinge [-d <device>] [-t <seconds>] <command>
+Usage: hinge [-d <device>] [-t <seconds>] [--json] <command>
 
 Commands:
   <degrees>                   Set hinge angle, 0 (closed) to 180 (flat)
@@ -116,6 +155,7 @@ Commands:
   sweep <from> <to> [seconds] Animate between two angles (default 1s)
   get                         Print current hinge angle
   posture                     Print the angle, orientation, and integrated displays
+  screenshot <path>           Save a PNG of the display that hosts the UI
   rotate <left|right>         Rotate 90°, like Device Hub's Rotate Left/Right
   orient <orientation>        Set orientation: portrait, landscape-left, landscape-right,
                               portrait-upside-down
@@ -123,8 +163,10 @@ Commands:
   help                        Show this help
 
 Options:
-  -d, --device <device>       Simulator UDID, name, or "booted" (default)
+  -d, --device <device>       Simulator UDID or name (default: $HINGE_DEVICE, else
+                              the only booted iPhone Duo)
   -t, --timeout <seconds>     Seconds to confirm a new angle (default 2, 0 to skip)
+  -j, --json                  Print JSON (get, posture, orientation, screenshot)
   -h, --help                  Show this help
   -v, --version               Print version
 ```
@@ -138,32 +180,69 @@ Setting an angle waits until CoreMotion reports it, so a change the simulator ig
 is an error instead of a silent success. That also means `hinge 90` on a simulator
 without a hinge fails. `-t 0` sends the event without waiting.
 
+#### Choosing a simulator
+
+Without `-d`, `hinge` uses the only booted iPhone Duo, so other booted simulators
+don't get in the way. With several iPhone Duos booted it lists them and exits;
+pass `-d` with a UDID or name, or set `HINGE_DEVICE`. When no iPhone Duo is booted,
+it falls back to the only booted simulator, which `rotate` and `orient` still work on.
+
 #### Posture and screenshots
 
 `posture` adds the display side of a fold, from `devicectl`:
 
 ```
 $ hinge posture
+device: iPhone Duo (34E69195-B9FF-4C56-816F-9DFFB8149FBB)
 angle: 180.0
 orientation: portrait
-display: LCD (primary)
-display: LCD-1 (active)
+display: LCD (primary) (backlight: off)
+display: LCD-1 (active) (backlight: activeOn)
 ```
 
 On the iPhone Duo, `LCD` is the cover display and `LCD-1` the inner one. The `active`
-flag is what tells which display hosts the UI; a locked device keeps its display
-active with the backlight dimmed. The switch takes 1-2.5 s after the angle changes,
-so give it a moment before you capture the screen.
+flag is what tells which display hosts the UI, not the backlight: a locked device keeps
+its display active with the backlight dimmed, a folded iPhone Duo lights its cover as
+`inactiveOn`, and the backlight follows a fold up to 3 s after `active` does. The switch
+itself takes 1-2.5 s after the angle changes, so give it a moment before you capture
+the screen.
 
-Because a foldable has two displays, `simctl` has to be told which one to capture —
-without `--display` it fails with `Invalid argument`:
+`hinge screenshot <path>` captures the display that hosts the UI. If that display's
+backlight is still off, it waits up to 2 s for it to come on.
 
 ```bash
-xcrun simctl io booted screenshot --display=LCD cover.png    # 2034x1398
+hinge screenshot out.png  # cover when folded, inner when unfolded
+```
+
+Plain `simctl` has to be told which display to capture — without `--display` it fails
+with `Invalid argument`:
+
+```bash
+xcrun simctl io booted screenshot --display=LCD cover.png    # 1398x2034
 xcrun simctl io booted screenshot --display=LCD-1 inner.png  # 2853x2007
 ```
 
 The numeric ids work too: `1` for the cover, `3` for the inner display.
+
+#### JSON
+
+`get`, `posture`, `orientation` and `screenshot` print JSON with `--json`:
+
+```
+$ hinge posture --json
+{
+  "device": {"udid": "34E69195-B9FF-4C56-816F-9DFFB8149FBB", "name": "iPhone Duo"},
+  "angle": 0.0,
+  "orientation": "portrait",
+  "activeDisplay": "LCD",
+  "displays": [
+    {"name": "LCD", "id": 1, "primary": true, "active": true, "backlight": "inactiveOn", "rotation": "rot0", "size": [1398, 2034], "scale": 3},
+    {"name": "LCD-1", "id": 3, "primary": false, "active": false, "backlight": "off", "rotation": "rot90", "size": [2007, 2853], "scale": 3}
+  ]
+}
+```
+
+`angle` is `null` on a simulator without a hinge, and `size` is in pixels.
 
 #### Orientation
 
@@ -202,8 +281,9 @@ Device Hub's Rotate Left/Right on a foldable sends an event on the same usage pa
 | `the hinge angle did not reach <n>` | The event went out but nothing moved. Most likely the private protocol changed in a newer Xcode; `-t 0` sends without the check. |
 | `failed to build helper` | `xcode-select -p` points at an Xcode without a foldable simulator SDK. Switch it with `sudo xcode-select -s /Applications/Xcode.app`. |
 | `no booted simulator` | Boot one: `xcrun simctl boot "iPhone Duo"`. |
+| `several iPhone Duo simulators are booted` / `no booted iPhone Duo` | `hinge` doesn't guess between simulators. Pass `-d <udid\|name>` or set `HINGE_DEVICE`. |
 | `posture` keeps naming the same `(active)` display after a fold | The simulator stopped following the hinge, although the angle still changes — unfolding to 180° can keep working while folding back to 0° no longer switches to the cover. Send the angle again after 1-2.5 s; if it persists, shut the simulator down and boot it again. |
-| `Invalid argument` from `simctl io … screenshot` | A foldable has two displays; pass `--display` (see [Posture and screenshots](#posture-and-screenshots)). |
+| `Invalid argument` from `simctl io … screenshot` | A foldable has two displays; use `hinge screenshot` or pass `--display` (see [Posture and screenshots](#posture-and-screenshots)). |
 
 ## Contributing
 
