@@ -2,7 +2,7 @@
 # hinge — control the hinge angle of a foldable iPhone Simulator (iPhone Duo).
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 HELPER_SRC="$SCRIPT_DIR/hinge_helper.m"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hinge"

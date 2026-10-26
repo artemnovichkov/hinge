@@ -1,6 +1,6 @@
 {
   "name": "hinge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Control the hinge angle of a foldable iPhone Simulator (iPhone Duo)",
   "author": {
     "name": "Artem Novichkov",
