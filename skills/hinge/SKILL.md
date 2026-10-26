@@ -7,7 +7,7 @@ description: Control the hinge (fold) angle of a foldable iPhone Simulator such 
 
 Set and read the hinge angle of a booted foldable iPhone Simulator from the command line. It posts the same HID event as the hidden hinge slider in Xcode's Device Hub (hold Option).
 
-Run the bundled script at `scripts/hinge`, relative to this skill's directory. If `hinge` is on `PATH`, you can use that instead.
+Run the bundled script at `scripts/hinge`, relative to this skill's directory. A `hinge` on `PATH` works too when `hinge -v` prints the same version as `scripts/hinge -v`; an older install lacks `screenshot` and `--json`.
 
 ## Commands
 
@@ -25,7 +25,7 @@ scripts/hinge rotate left        # rotate 90°, like Device Hub's Controls > Rot
 scripts/hinge rotate right
 scripts/hinge orient landscape-left  # portrait, landscape-left, landscape-right, or portrait-upside-down
 scripts/hinge orientation        # print current orientation, e.g. landscape-left
-scripts/hinge -d "iPhone Duo" 90 # target a simulator by name or UDID (default: the only booted iPhone Duo)
+scripts/hinge -d "iPhone Duo" 90 # target a simulator by name or UDID (default: $HINGE_DEVICE, else the only booted iPhone Duo)
 scripts/hinge -t 0 90            # set without waiting for the angle to be confirmed
 ```
 
@@ -33,7 +33,7 @@ scripts/hinge -t 0 90            # set without waiting for the angle to be confi
 
 ## Workflow
 
-1. Make sure a foldable simulator is booted: `xcrun simctl list devices booted`. Without `-d`, `hinge` picks the only booted iPhone Duo; with several, it lists them and exits — pass `-d <udid>` instead of guessing.
+1. Make sure a foldable simulator is booted: `xcrun simctl list devices booted`. Without `-d`, `hinge` picks the only booted iPhone Duo; with several, it lists them and exits — pass `-d <udid>` or set `HINGE_DEVICE` instead of guessing.
 2. Set the angle. The command returns once the simulator reports the new angle, so a non-zero exit means the fold did not happen — don't poll `get` to check it.
 3. Wait for the display to switch before you screenshot or read the UI: it takes 1-2.5 s after the angle changes.
 4. `scripts/hinge posture` tells which display hosts the UI (`active`) after a fold. Use `--json` when you parse it: `activeDisplay` names that display.
