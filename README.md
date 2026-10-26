@@ -14,7 +14,7 @@
 
 Let coding agents like Claude Code and Codex fold iPhone Duo while they build and verify your app. `hinge` ships as an [Agent Skill](https://agentskills.io) with a bundled CLI.
 
-https://github.com/user-attachments/assets/758de2a9-10eb-4972-96a0-fd04e433267d
+<img src=".github/images/demo.gif" alt="Claude Code unfolds iPhone Duo with hinge, bends it to 90°, and folds it back">
 
 Ask the agent things like:
 
