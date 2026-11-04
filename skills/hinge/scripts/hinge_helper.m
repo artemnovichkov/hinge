@@ -51,6 +51,7 @@ static const useconds_t kSettleMicros = 20000;
 // CoreMotion's private angle API, the same source UIKit's UIHinge reads.
 @interface CMAngle : NSObject
 - (float)angleDegrees;
+- (float)mechanicalAngleDegrees;
 @end
 
 @interface CMAngleManager : NSObject
@@ -108,7 +109,7 @@ static void send_orientation(IOHIDEventSystemClientRef client, const char *orien
 // Starts angle updates, runs `afterStart`, then waits until `accept` takes an update
 // or `timeout` passes. CoreMotion delivers the first update right away, without
 // waiting for a change.
-static ObserveResult observe_angles(CFTimeInterval timeout, void (^afterStart)(void), bool (^accept)(double degrees)) {
+static ObserveResult observe_angles(CFTimeInterval timeout, void (^afterStart)(void), bool (^accept)(CMAngle *angle)) {
     Class managerClass = NSClassFromString(@"CMAngleManager");
     if (!managerClass || ![managerClass isAvailable]) {
         fprintf(stderr, "hinge_helper: this simulator reports no hinge\n");
@@ -118,7 +119,7 @@ static ObserveResult observe_angles(CFTimeInterval timeout, void (^afterStart)(v
     id manager = [[managerClass alloc] init];
     __block bool accepted = false;
     [manager startAngleUpdatesToQueue:[NSOperationQueue new] handler:^(CMAngle *angle) {
-        if (!accepted && accept([angle angleDegrees])) accepted = true;
+        if (!accepted && accept(angle)) accepted = true;
     }];
     if (afterStart) afterStart();
 
@@ -132,8 +133,8 @@ static ObserveResult observe_angles(CFTimeInterval timeout, void (^afterStart)(v
 
 static int print_angle(void) {
     __block double current = 0;
-    ObserveResult result = observe_angles(kAngleTimeout, NULL, ^bool(double degrees) {
-        current = degrees;
+    ObserveResult result = observe_angles(kAngleTimeout, NULL, ^bool(CMAngle *angle) {
+        current = [angle angleDegrees];
         return true;
     });
     if (result == kObserveTimedOut) fprintf(stderr, "hinge_helper: timed out reading the hinge angle\n");
@@ -142,14 +143,21 @@ static int print_angle(void) {
     return 0;
 }
 
+// The angle that was sent. From iOS 27.3 `angleDegrees` settles several degrees away
+// from it, but `mechanicalAngleDegrees` stays exact. Older runtimes may not have it.
+static double commanded_degrees(CMAngle *angle) {
+    if ([angle respondsToSelector:@selector(mechanicalAngleDegrees)]) return [angle mechanicalAngleDegrees];
+    return [angle angleDegrees];
+}
+
 // Sends the angle and waits for CoreMotion to report it, so the caller knows the
 // simulator took the change instead of only that the event was dispatched.
 static int set_angle_confirmed(IOHIDEventSystemClientRef client, double degrees, CFTimeInterval timeout) {
     double target = clamp_angle(degrees);
     ObserveResult result = observe_angles(timeout, ^{
         send_angle(client, target);
-    }, ^bool(double reported) {
-        return fabs(reported - target) <= kAngleTolerance;
+    }, ^bool(CMAngle *angle) {
+        return fabs(commanded_degrees(angle) - target) <= kAngleTolerance;
     });
     if (result == kObserveTimedOut) {
         fprintf(stderr, "hinge_helper: the hinge angle did not reach %.1f within %.1f s\n", target, timeout);

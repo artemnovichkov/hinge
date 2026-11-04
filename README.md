@@ -180,6 +180,10 @@ Setting an angle waits until CoreMotion reports it, so a change the simulator ig
 is an error instead of a silent success. That also means `hinge 90` on a simulator
 without a hinge fails. `-t 0` sends the event without waiting.
 
+On iOS 27.3 the reported angle settles a few degrees away from the one you set: `hinge 129`
+reads back as 127-130°, or about 122° when opening from closed. That isn't an error, because
+the confirmation compares the angle CoreMotion says was commanded.
+
 #### Choosing a simulator
 
 Without `-d`, `hinge` uses the only booted iPhone Duo, so other booted simulators
